@@ -1,0 +1,137 @@
+name: Build QLC+ Matrix for Intel Mac
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QT_VERSION: "6.11.2"
+  QT_MODULES: "qt3d qtimageformats qtmultimedia qtserialport qtwebsockets"
+
+jobs:
+  build:
+    name: Build macOS x86_64 DMG
+    runs-on: macos-15-intel
+    timeout-minutes: 180
+    steps:
+      - name: Verify Intel runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "x86_64"
+          echo "Intel runner confirmed: $(uname -m)"
+
+      - name: Checkout Matrix Fork source
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/mjcmatrix/qlcplus.git source
+          cd source
+          echo "SOURCE_SHA=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
+          UPSTREAM=$(sed -n '/^if(qmlui)/,/^else()/ s/.*set(APPVERSION "\([^"]*\)").*/\1/p' variables.cmake)
+          test -n "$UPSTREAM"
+          VERSION="${UPSTREAM}-matrix.intel.$(date -u +%Y%m%d).${SOURCE_SHA}"
+          echo "APPVERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "QTDIR=${GITHUB_WORKSPACE}/qt/Qt/${QT_VERSION}/macos" >> "$GITHUB_ENV"
+          echo "NPROC=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+          echo "Building source commit ${SOURCE_SHA}; version ${VERSION}"
+
+      - name: Install system dependencies
+        run: |
+          brew update
+          brew install fftw mad libsndfile libftdi
+
+      - name: Install Intel Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          dir: "${{ github.workspace }}/qt/"
+          target: desktop
+          arch: clang_64
+          modules: ${{ env.QT_MODULES }}
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2.23
+        with:
+          key: qlcplus-macos-intel
+
+      - name: Stamp build version
+        shell: bash
+        run: |
+          cd source
+          sed -i '' '/^if(qmlui)/,/^else()/ s/set(APPVERSION "[^"]*")/set(APPVERSION "'" "${APPVERSION}" "'")/' variables.cmake
+          grep -n 'set(APPVERSION' variables.cmake
+
+      - name: Configure
+        shell: bash
+        run: |
+          cd source
+          cmake -S . -B build \
+            -DCMAKE_PREFIX_PATH="${QTDIR}/lib/cmake" \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+            -Dqmlui=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: |
+          cd source
+          cmake --build build --parallel "${NPROC}"
+
+      - name: Install
+        run: |
+          cd source/build
+          make install/fast
+
+      - name: Bundle Qt dependencies
+        run: |
+          cd source
+          platforms/macos/fix_dylib_deps.sh ~/QLC+.app/Contents/Frameworks/libsndfile.1.dylib
+          platforms/macos/fix_dylib_deps.sh ~/QLC+.app/Contents/MacOS/qlcplus5
+          "${QTDIR}/bin/macdeployqt" ~/QLC+.app -qmldir=qmlui/qml
+
+      - name: Verify Intel architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$HOME/QLC+.app"
+          MAIN="$APP/Contents/MacOS/qlcplus5"
+          test -f "$MAIN"
+          file "$MAIN"
+          lipo -verify_arch x86_64 "$MAIN"
+          while IFS= read -r -d '' candidate; do
+            description=$(file -b "$candidate")
+            if [[ "$description" == *"Mach-O"* ]]; then
+              lipo -verify_arch x86_64 "$candidate" >/dev/null || {
+                echo "Non-Intel or invalid Mach-O file: $candidate ($description)"
+                exit 1
+              }
+            fi
+          done < <(find "$APP/Contents" -type f -print0)
+
+      - name: Create DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTDIR="$PWD"
+          cd source/platforms/macos/dmg
+          ./create-dmg --volname "Q Light Controller Plus ${APPVERSION}" \
+            --volicon "$GITHUB_WORKSPACE/source/resources/icons/qlcplus.icns" \
+            --background background.png \
+            --window-size 400 300 \
+            --window-pos 200 100 \
+            --icon-size 64 \
+            --icon "QLC+" 0 150 \
+            --app-drop-link 200 150 \
+            "$OUTDIR/qlcplus5-matrix-${APPVERSION}-macos-intel.dmg" \
+            "$HOME/QLC+.app"
+
+      - name: Upload Intel DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: qlcplus-macos-intel-x86_64
+          path: qlcplus5-matrix-${{ env.APPVERSION }}-macos-intel.dmg
+          if-no-files-found: error
+          retention-days: 14
