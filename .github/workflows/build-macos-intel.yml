@@ -28,7 +28,8 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/mjcmatrix/qlcplus.git source
           cd source
-          echo "SOURCE_SHA=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
+          SOURCE_SHA=$(git rev-parse --short=7 HEAD)
+          echo "SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
           UPSTREAM=$(sed -n '/^if(qmlui)/,/^else()/ s/.*set(APPVERSION "\([^"]*\)").*/\1/p' variables.cmake)
           test -n "$UPSTREAM"
           VERSION="${UPSTREAM}-matrix.intel.$(date -u +%Y%m%d).${SOURCE_SHA}"
@@ -60,7 +61,7 @@ jobs:
         shell: bash
         run: |
           cd source
-          sed -i '' '/^if(qmlui)/,/^else()/ s/set(APPVERSION "[^"]*")/set(APPVERSION "'" "${APPVERSION}" "'")/' variables.cmake
+          sed -i '' '/^if(qmlui)/,/^else()/ s/set(APPVERSION "[^"]*")/set(APPVERSION "'"\${APPVERSION}"'")/' variables.cmake
           grep -n 'set(APPVERSION' variables.cmake
 
       - name: Configure
