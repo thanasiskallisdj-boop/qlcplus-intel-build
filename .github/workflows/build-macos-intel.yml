@@ -26,7 +26,10 @@ jobs:
       - name: Checkout Matrix Fork source
         shell: bash
         run: |
-          git clone --depth 1 https://github.com/mjcmatrix/qlcplus.git source
+          mkdir source
+          git -C source init
+          git -C source fetch --depth 1 https://github.com/mjcmatrix/qlcplus.git 432313d0495d13620819f2e770b6a52c825ffa28
+          git -C source -c advice.detachedHead=false checkout FETCH_HEAD
           cd source
           SOURCE_SHA=$(git rev-parse --short=7 HEAD)
           echo "SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
