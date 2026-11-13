@@ -55,10 +55,6 @@ jobs:
           arch: clang_64
           modules: ${{ env.QT_MODULES }}
 
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2.23
-        with:
-          key: qlcplus-macos-intel
 
       - name: Stamp build version
         shell: bash
@@ -75,9 +71,7 @@ jobs:
             -DCMAKE_PREFIX_PATH="${QTDIR}/lib/cmake" \
             -DCMAKE_OSX_ARCHITECTURES=x86_64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-            -Dqmlui=ON \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -Dqmlui=ON
 
       - name: Build
         run: |
