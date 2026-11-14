@@ -2,6 +2,9 @@ name: Build QLC+ Matrix for Intel Mac
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - test/3d-bloom-bypass
 
 permissions:
   contents: read
